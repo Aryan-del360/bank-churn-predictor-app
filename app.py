@@ -2,6 +2,8 @@ import streamlit as st
 import joblib
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 # --- Configuration ---
 # Define the exact columns your model's ColumnTransformer expects as input
@@ -30,6 +32,21 @@ def load_churn_model(model_path='churn_prediction_model.pkl'):
         st.error(f"Error loading model: {e}. Please check the model file.")
         st.stop()
 
+@st.cache_data # Cache the training data loading
+def load_training_data(data_path='train.csv'):
+    """Loads the training data for insights."""
+    try:
+        df = pd.read_csv(data_path)
+        # Apply the same feature engineering to the training data for insights
+        df = create_engineered_features(df.copy()) # Apply FE here for consistency
+        return df
+    except FileNotFoundError:
+        st.warning(f"Warning: Training data file '{data_path}' not found. Visual insights from training data will not be available.")
+        return None
+    except Exception as e:
+        st.warning(f"Warning: Error loading training data: {e}. Visual insights from training data might be limited.")
+        return None
+
 def create_engineered_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     Replicates the feature engineering steps applied during model training.
@@ -55,7 +72,7 @@ def get_user_inputs():
 
     with st.sidebar.expander("Account Details", expanded=True):
         age = st.number_input("Age", 18, 92, 38, help="Customer's age in years.")
-        tenure = st.slider("Tenure (Years)", 0, 10, 5, help="Number of years customer has been with the bank.")
+        tenure = st.slider("Tenure (Years)", 0, 10, 5, help="Number of bank products (e.g., accounts, loans) customer uses.")
         num_products = st.slider("Number of Products", 1, 4, 1, help="Number of bank products (e.g., accounts, loans) customer uses.")
 
     with st.sidebar.expander("Financials & Activity", expanded=True):
@@ -106,6 +123,70 @@ def preprocess_and_predict(model_pipeline, raw_input_df: pd.DataFrame):
 
     return prediction, prediction_proba
 
+def plot_churn_insights(df: pd.DataFrame):
+    """Generates and displays visualizations from the training data related to churn."""
+    if df is None:
+        st.warning("Training data not available for insights.")
+        return
+
+    st.subheader("📊 Insights from Training Data")
+    st.markdown("Here are some trends observed from the historical customer data regarding churn:")
+
+    # Plot 1: Churn by Geography
+    st.markdown("##### Churn Rate by Geography")
+    fig1, ax1 = plt.subplots(figsize=(8, 5))
+    sns.countplot(data=df, x='Geography', hue='Exited', palette='viridis', ax=ax1)
+    ax1.set_title('Churn Count by Geography')
+    ax1.set_xlabel('Geography')
+    ax1.set_ylabel('Count')
+    ax1.legend(title='Exited', labels=['No Churn', 'Churn'])
+    st.pyplot(fig1)
+    plt.close(fig1) # Close figure to prevent warning
+
+    # Plot 2: Churn by Gender
+    st.markdown("##### Churn Rate by Gender")
+    fig2, ax2 = plt.subplots(figsize=(8, 5))
+    sns.countplot(data=df, x='Gender', hue='Exited', palette='magma', ax=ax2)
+    ax2.set_title('Churn Count by Gender')
+    ax2.set_xlabel('Gender')
+    ax2.set_ylabel('Count')
+    ax2.legend(title='Exited', labels=['No Churn', 'Churn'])
+    st.pyplot(fig2)
+    plt.close(fig2)
+
+    # Plot 3: Churn by Number of Products
+    st.markdown("##### Churn Rate by Number of Products")
+    fig3, ax3 = plt.subplots(figsize=(8, 5))
+    sns.countplot(data=df, x='NumOfProducts', hue='Exited', palette='cividis', ax=ax3)
+    ax3.set_title('Churn Count by Number of Products')
+    ax3.set_xlabel('Number of Products')
+    ax3.set_ylabel('Count')
+    ax3.legend(title='Exited', labels=['No Churn', 'Churn'])
+    st.pyplot(fig3)
+    plt.close(fig3)
+
+    # Plot 4: Distribution of Age for Churned vs. Non-Churned
+    st.markdown("##### Age Distribution for Churned vs. Non-Churned Customers")
+    fig4, ax4 = plt.subplots(figsize=(10, 6))
+    sns.kdeplot(data=df, x='Age', hue='Exited', fill=True, common_norm=False, palette='viridis', ax=ax4)
+    ax4.set_title('Age Distribution by Churn Status')
+    ax4.set_xlabel('Age')
+    ax4.set_ylabel('Density')
+    ax4.legend(title='Exited', labels=['No Churn', 'Churn'])
+    st.pyplot(fig4)
+    plt.close(fig4)
+
+    # Plot 5: Distribution of Balance for Churned vs. Non-Churned (only if Balance > 0)
+    st.markdown("##### Balance Distribution for Churned vs. Non-Churned Customers (Balance > 0)")
+    fig5, ax5 = plt.subplots(figsize=(10, 6))
+    sns.kdeplot(data=df[df['Balance'] > 0], x='Balance', hue='Exited', fill=True, common_norm=False, palette='magma', ax=ax5)
+    ax5.set_title('Balance Distribution by Churn Status (for customers with balance)')
+    ax5.set_xlabel('Balance (USD)')
+    ax5.set_ylabel('Density')
+    ax5.legend(title='Exited', labels=['No Churn', 'Churn'])
+    st.pyplot(fig5)
+    plt.close(fig5)
+
 # --- Main Application Logic ---
 def main():
     st.set_page_config(page_title="Bank Customer Churn Predictor", layout="wide", initial_sidebar_state="expanded")
@@ -142,6 +223,16 @@ def main():
             st.info("💡 **Actionable Insight:** This customer is likely to remain active. Continue to monitor engagement and ensure their satisfaction with bank services.")
 
     st.markdown("---")
+
+    # Load training data for insights and display plots
+    training_df_insights = load_training_data()
+    if training_df_insights is not None:
+        plot_churn_insights(training_df_insights)
+    else:
+        st.info("To enable visual insights, please ensure 'train.csv' is in the same directory as your app.")
+
+
+    st.markdown("---")
     st.markdown("### About This Predictor")
     st.info("""
         This application uses a pre-trained Machine Learning model (an XGBoost Classifier within a scikit-learn Pipeline)
@@ -154,6 +245,8 @@ def main():
         - **One-Hot Encoding:** Converting categorical data into a numerical format.
 
         This ensures the model receives data in the exact format it expects for accurate predictions.
+
+        The **'Insights from Training Data'** section provides visualizations of key trends and distributions from the original dataset, helping you understand the underlying patterns related to customer churn.
         """)
     st.markdown("---")
     st.caption("Developed by Shubham Sharma as a Data Science Portfolio Project.")
