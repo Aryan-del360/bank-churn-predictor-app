@@ -184,4 +184,4 @@ def main():
     st.caption("Developed by Shubham Sharma as a Data Science Portfolio Project.")
 
 if __name__ == '__main__':
-    main()ss
+    main()
