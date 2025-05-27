@@ -2,21 +2,17 @@ import streamlit as st
 import joblib
 import pandas as pd
 import numpy as np
-# No need to import StandardScaler, OneHotEncoder, ColumnTransformer, Pipeline directly
-# if your saved model is a Pipeline object containing them.
-# The 'model_pipeline' object will handle these internally upon prediction.
 
 # --- Configuration ---
-# Define the exact columns your model expects as input *after* feature engineering
-# and *before* the ColumnTransformer in your Kaggle Notebook.
-# This order is CRUCIAL for the ColumnTransformer inside your pipeline.
-# Adjust this list if your feature engineering or original column order was different.
+# Define the exact columns your model's ColumnTransformer expects as input
+# These should be the original numerical, original categorical, and engineered features.
+# The ColumnTransformer itself will handle the one-hot encoding of 'Geography' and 'Gender'.
 COLUMNS_ORDER = [
     'CreditScore', 'Age', 'Tenure', 'Balance', 'NumOfProducts',
     'HasCrCard', 'IsActiveMember', 'EstimatedSalary',
     'BalanceSalaryRatio', 'IsZeroBalanceAndHasProducts', 'ActiveHasCrCard',
-    'Geography_France', 'Geography_Germany', 'Geography_Spain', # One-hot encoded geographies
-    'Gender_Female', 'Gender_Male' # One-hot encoded genders
+    'Geography', # Keep original categorical column
+    'Gender'     # Keep original categorical column
 ]
 
 # --- Helper Functions ---
@@ -52,7 +48,6 @@ def get_user_inputs():
     """Collects user inputs from Streamlit widgets."""
     st.sidebar.header("Customer Details")
 
-    # Using columns for a cleaner layout in the sidebar
     with st.sidebar.expander("Demographics & Profile", expanded=True):
         credit_score = st.slider("Credit Score", 350, 850, 650, help="Score indicating creditworthiness.")
         geography = st.selectbox("Geography", ['France', 'Germany', 'Spain'], help="Customer's country of residence.")
@@ -90,32 +85,13 @@ def get_user_inputs():
 def preprocess_and_predict(model_pipeline, raw_input_df: pd.DataFrame):
     """
     Applies feature engineering and makes a prediction using the loaded model pipeline.
+    The pipeline handles all further preprocessing (scaling, one-hot encoding).
     """
     # Apply feature engineering
     engineered_input_df = create_engineered_features(raw_input_df.copy())
 
-    # Create one-hot encoded columns for 'Geography' and 'Gender'
-    # This manually creates the columns expected by the ColumnTransformer after OneHotEncoder
-    # Ensure these match the categories and column naming convention from your training
-    # (e.g., 'Geography_France', 'Geography_Germany', 'Geography_Spain', 'Gender_Female', 'Gender_Male')
-    # If your training data had other categories or different naming, adjust here.
-
-    # Initialize all possible one-hot encoded columns to 0
-    for geo in ['France', 'Germany', 'Spain']:
-        engineered_input_df[f'Geography_{geo}'] = 0
-    for gen in ['Female', 'Male']:
-        engineered_input_df[f'Gender_{gen}'] = 0
-
-    # Set the value to 1 for the selected category
-    engineered_input_df[f'Geography_{raw_input_df["Geography"].iloc[0]}'] = 1
-    engineered_input_df[f'Gender_{raw_input_df["Gender"].iloc[0]}'] = 1
-
-    # Drop original categorical columns as they will be handled by the one-hot encoded versions
-    engineered_input_df = engineered_input_df.drop(columns=['Geography', 'Gender'])
-
-
     # Ensure the final input DataFrame has the exact same columns and order as the
-    # X DataFrame used for training the model (before ColumnTransformer).
+    # X DataFrame used for training the model *before* the ColumnTransformer.
     # This is CRUCIAL for the ColumnTransformer inside the pipeline.
     try:
         final_input_df = engineered_input_df[COLUMNS_ORDER]
@@ -123,9 +99,8 @@ def preprocess_and_predict(model_pipeline, raw_input_df: pd.DataFrame):
         st.error(f"Column mismatch: A required column for prediction is missing or misnamed. Check COLUMNS_ORDER and feature engineering. Missing: {e}")
         st.stop()
 
-
     # Make prediction using the loaded pipeline
-    # The pipeline automatically handles scaling and the one-hot encoding for the original categorical columns
+    # The pipeline automatically handles scaling and one-hot encoding for the original categorical columns
     prediction_proba = model_pipeline.predict_proba(final_input_df)[:, 1][0]
     prediction = model_pipeline.predict(final_input_df)[0]
 
